@@ -1,0 +1,138 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== MOD03 — Trend Radar ===== */
+@layer base {
+  html {
+    background: #05070d;
+  }
+  body {
+    @apply bg-ink-900 text-chalk font-body antialiased;
+    /* Ambient field: two soft radial glows so the dark ground has depth
+       rather than reading as flat black. */
+    background-image:
+      radial-gradient(60rem 40rem at 12% -10%, rgba(255, 154, 60, 0.10), transparent 60%),
+      radial-gradient(50rem 36rem at 88% 8%, rgba(53, 224, 216, 0.09), transparent 62%);
+    background-attachment: fixed;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-signal ring-offset-2 ring-offset-ink-900;
+  }
+}
+
+@layer components {
+  /* Glass: translucent fill, hairline top edge, soft inner lift. */
+  .glass {
+    @apply rounded-2xl border border-white/10 bg-white/[0.045] backdrop-blur-xl;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.07),
+      0 18px 48px -22px rgba(0, 0, 0, 0.9);
+  }
+  .glass-hover {
+    @apply transition-all duration-300 hover:border-white/20 hover:bg-white/[0.07];
+  }
+  /* Any text that may be non-Latin. Noto Sans Devanagari carries the
+     conjuncts and matras that Space Grotesk and Inter simply do not have;
+     without it the browser substitutes per-glyph and Hindi looks broken
+     even when the bytes are correct. */
+  .intl {
+    font-family: "Space Grotesk", "Noto Sans Devanagari", "Noto Sans",
+      system-ui, sans-serif;
+  }
+  .intl-mono {
+    font-family: "JetBrains Mono", "Noto Sans Devanagari", "Noto Sans",
+      ui-monospace, monospace;
+  }
+  .eyebrow {
+    @apply font-mono text-[10px] uppercase tracking-[0.22em] text-muted;
+  }
+}
+
+/* Respect the OS setting. Nothing here is load-bearing for comprehension. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::-webkit-scrollbar { width: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.09);
+  border-radius: 99px;
+}
+
+/* ===== MOD02 — Persona Panel ===== */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-ink-900 text-zinc-200 font-sans antialiased;
+    /* Ambient neon glows fixed behind the content, MOD03-style. */
+    background-image:
+      radial-gradient(1100px 600px at 12% -10%, rgba(249, 115, 22, 0.14), transparent 60%),
+      radial-gradient(900px 500px at 92% 4%, rgba(236, 72, 153, 0.12), transparent 55%),
+      radial-gradient(1000px 700px at 60% 110%, rgba(45, 212, 191, 0.10), transparent 60%);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+
+  ::selection {
+    @apply bg-neon-orange/30 text-white;
+  }
+
+  /* Slim, dark scrollbars to match the aesthetic. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+  }
+}
+
+@layer components {
+  /* Frosted glass surface used across every card. */
+  .glass {
+    @apply rounded-2xl border border-white/10 bg-white/[0.035] backdrop-blur-xl;
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
+      0 20px 50px -30px rgba(0, 0, 0, 0.9);
+  }
+
+  .glass-hover {
+    @apply transition duration-300 hover:border-white/20 hover:bg-white/[0.06];
+  }
+
+  .gradient-text {
+    @apply bg-grad-accent bg-clip-text text-transparent;
+  }
+
+  /* Small monospace eyebrow labels (SIGNAL FEED, SELECTED SIGNAL, ...). */
+  .eyebrow {
+    @apply font-mono text-[11px] uppercase tracking-[0.22em] text-zinc-500;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
