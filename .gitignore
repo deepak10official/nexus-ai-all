@@ -14,3 +14,11 @@ logs/
 logs/
 generated/
 backend/generated/
+
+node_modules/
+logs/
+dist/
+__pycache__/
+*.pyc
+
+!.env.example

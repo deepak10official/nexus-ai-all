@@ -72,6 +72,10 @@ def health():
 
     radar_ok = panel_ok = False
     radar_model = panel_model = None
+    image_ok = False
+    image_model = None
+    image_licence = None
+    region = None
     detail = {}
 
     try:
@@ -79,6 +83,10 @@ def health():
 
         radar_model = radar_settings.openrouter_model
         radar_ok = bool(getattr(radar_settings, "openrouter_api_key", ""))
+        image_model = getattr(radar_settings, "image_model", None)
+        image_ok = bool(getattr(radar_settings, "hf_token", ""))
+        image_licence = getattr(radar_settings, "image_licence", None)
+        region = getattr(radar_settings, "trend_region", None)
     except Exception as exc:
         detail["radar"] = str(exc)
 
@@ -96,7 +104,23 @@ def health():
 
     return {
         "ok": True,
-        "radar": {"llm_configured": radar_ok, "model": radar_model},
+        # Flat fields kept for the MOD03 UI, which was written against the
+        # standalone Trend Radar health endpoint. Removing them silently
+        # disabled the image button, so they stay.
+        "llm_configured": radar_ok,
+        "model": radar_model,
+        "image_configured": image_ok,
+        "image_model": image_model,
+        "image_licence": image_licence,
+        "region": region,
+        # Grouped view for the merged app.
+        "radar": {
+            "llm_configured": radar_ok,
+            "model": radar_model,
+            "image_configured": image_ok,
+            "image_model": image_model,
+            "image_licence": image_licence,
+        },
         "panel": {"llm_configured": panel_ok, "model": panel_model},
         "log_file": str(current_log_file() or ""),
         "detail": detail or None,
