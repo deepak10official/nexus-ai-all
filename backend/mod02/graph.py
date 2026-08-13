@@ -45,9 +45,9 @@ def _make_checkpointer() -> MemorySaver:
 
     serde = JsonPlusSerializer(
         allowed_msgpack_modules=[
-            ("backend.utils.schemas", "PanelResult"),
-            ("backend.utils.schemas", "PersonaVote"),
-            ("backend.utils.schemas", "VoteDecision"),
+            ("backend.mod02.utils.schemas", "PanelResult"),
+            ("backend.mod02.utils.schemas", "PersonaVote"),
+            ("backend.mod02.utils.schemas", "VoteDecision"),
         ]
     )
     return MemorySaver(serde=serde)
