@@ -12,15 +12,20 @@ import Footer from "../components/panel/Footer.jsx";
 export default function PersonaPanel({ incomingPost }) {
   const panel = usePanel();
   const lastHandoff = useRef(null);
+  const { newDraft } = panel;
 
   // A draft handed over from the Trend Radar starts a clean review session with
   // that wording already loaded, so the reviewer just presses Run the panel.
+  // The key includes the text, not just the id: re-approving an edited draft
+  // must load the new wording, while re-sending identical text must not wipe
+  // a review already in progress.
   useEffect(() => {
     if (!incomingPost?.post) return;
-    if (lastHandoff.current === incomingPost.draft_id) return;
-    lastHandoff.current = incomingPost.draft_id;
-    panel.newDraft(incomingPost.post);
-  }, [incomingPost, panel]);
+    const key = `${incomingPost.draft_id}::${incomingPost.post}`;
+    if (lastHandoff.current === key) return;
+    lastHandoff.current = key;
+    newDraft(incomingPost.post);
+  }, [incomingPost, newDraft]);
   const hasRounds = panel.rounds.length > 0;
   const lastRound = hasRounds ? panel.rounds[panel.rounds.length - 1] : null;
 
@@ -30,6 +35,28 @@ export default function PersonaPanel({ incomingPost }) {
 
       <main className="pb-8">
         <Hero settings={panel.settings} />
+
+        {/* Provenance: makes clear this wording arrived from the Trend Radar
+            rather than being typed here. */}
+        {incomingPost?.post ? (
+          <div className="mx-auto max-w-7xl px-5 pt-6 sm:px-8">
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-xs text-zinc-400">
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-neon-orange/90">
+                From Trend Radar
+              </span>
+              <span className="text-zinc-600">·</span>
+              <span>draft {incomingPost.draft_id?.slice(0, 8)}</span>
+              {incomingPost.hashtags?.length ? (
+                <>
+                  <span className="text-zinc-600">·</span>
+                  <span className="font-mono text-[11px] text-zinc-500">
+                    {incomingPost.hashtags.join(" ")}
+                  </span>
+                </>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         <PersonaBento personas={panel.personas} />
 
         <PostConsole

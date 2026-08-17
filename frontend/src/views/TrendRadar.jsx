@@ -165,26 +165,6 @@ export default function TrendRadar({ onHandoff }) {
     }
   }
 
-  async function decide(action) {
-    setDeciding(true);
-    try {
-      const result = await api.decide(draft.draft_id, action);
-      setDecision(result);
-      // A fully approved draft is what MOD02's panel validates. Hand the
-      // wording straight over rather than making the user copy it across.
-      if (action === "approve" && onHandoff) {
-        onHandoff({
-          draft_id: draft.draft_id,
-          post: draft.post_text ?? draft.text ?? "",
-          hashtags: draft.hashtags ?? [],
-        });
-      }
-    } catch (e) {
-      setGenError(e.message);
-    } finally {
-      setDeciding(false);
-    }
-  }
 
   const actionable =
     feed?.trends.filter((t) => ["auto_draft", "review"].includes(t.band))
@@ -435,6 +415,7 @@ export default function TrendRadar({ onHandoff }) {
               error={genError}
               onGenerate={generate}
               health={health}
+              onHandoff={onHandoff}
             />
           </motion.div>
         </section>

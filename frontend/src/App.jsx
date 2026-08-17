@@ -15,12 +15,18 @@ export default function App() {
   const [handoff, setHandoff] = useState(null);
   const [flash, setFlash] = useState(null);
 
-  // MOD03 approved a draft -> load it into MOD02 and switch to the panel.
+  // MOD03 approved a draft -> make it available to MOD02.
+  // Approving the copy loads it quietly so the MOD03 review flow is not
+  // interrupted; the final approval (or the "Run panel" link) switches over.
   const onHandoff = useCallback((draft) => {
     if (!draft?.post) return;
     setHandoff(draft);
-    setView("panel");
-    setFlash("Draft handed off from Trend Radar — ready for the panel.");
+    if (draft.switchTo) {
+      setView("panel");
+      setFlash("Draft handed off from Trend Radar — ready for the panel.");
+    } else {
+      setFlash("Approved copy sent to the Persona Panel.");
+    }
     window.setTimeout(() => setFlash(null), 6000);
   }, []);
 

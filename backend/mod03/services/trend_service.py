@@ -92,7 +92,22 @@ def _build(region: str, names: list[str], fetched_at: datetime,
 
 
 def find(name: str) -> dict | None:
-    feed = get_feed()
+    """Look a trend up in the current feed.
+
+    Returns None when the trend is not present *or* when the feed cannot be
+    fetched at all. The caller (``/generate`` with force=True) already handles
+    a missing trend by scoring it on the fly, so a scraper outage must not
+    raise here — otherwise the manual hashtag bench, the one escape hatch that
+    does not need the scraper, dies with it.
+    """
+
+    try:
+        feed = get_feed()
+    except Exception as exc:
+        log.warning("find(%s): feed unavailable (%s) — treating as not found",
+                    name, type(exc).__name__)
+        return None
+
     for t in feed["trends"]:
         if t["name"].lower() == name.lower():
             return t

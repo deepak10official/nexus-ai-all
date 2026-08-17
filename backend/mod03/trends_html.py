@@ -9,8 +9,14 @@ fetch_trends() instead of shelling out. Still runnable standalone:
 
 import json
 
+import time
+
 import requests
+
+from backend.core.logging import get_logger
 from bs4 import BeautifulSoup
+
+log = get_logger("trends.scrape")
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -42,11 +48,36 @@ def parse_latest(html: str) -> list[str]:
     return names
 
 
-def fetch_trends(region: str = "india", timeout: int = 20) -> list[str]:
-    """Raise on failure — the caller decides how to degrade."""
+def fetch_trends(
+    region: str = "india",
+    timeout: int = 45,
+    attempts: int = 2,
+) -> list[str]:
+    """Raise on failure — the caller decides how to degrade.
+
+    trends24 is often slow rather than down, so a single short timeout reports
+    an outage that is really just latency. One retry with a longer window
+    recovers most of those without making a real failure much slower.
+    """
+
     url = f"https://trends24.in/{region}/"
-    r = requests.get(url, headers=HEADERS, timeout=timeout)
-    r.raise_for_status()
+    last_exc: Exception | None = None
+
+    for attempt in range(1, max(1, attempts) + 1):
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=timeout)
+            r.raise_for_status()
+            break
+        except requests.RequestException as exc:
+            last_exc = exc
+            if attempt < attempts:
+                log.warning(
+                    "trends24 attempt %d/%d failed (%s) — retrying",
+                    attempt, attempts, type(exc).__name__,
+                )
+                time.sleep(1.5)
+    else:
+        raise last_exc  # every attempt failed
 
     # THE fix for broken Hindi. When a server omits charset from the
     # Content-Type header, requests falls back to ISO-8859-1 per the old
