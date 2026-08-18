@@ -76,6 +76,7 @@ def health():
     image_model = None
     image_licence = None
     region = None
+    fallback_ok = False
     detail = {}
 
     try:
@@ -87,6 +88,7 @@ def health():
         image_ok = bool(getattr(radar_settings, "hf_token", ""))
         image_licence = getattr(radar_settings, "image_licence", None)
         region = getattr(radar_settings, "trend_region", None)
+        fallback_ok = bool(getattr(radar_settings, "scrapebadger_api_key", ""))
     except Exception as exc:
         detail["radar"] = str(exc)
 
@@ -113,6 +115,7 @@ def health():
         "image_model": image_model,
         "image_licence": image_licence,
         "region": region,
+        "trend_fallback_configured": fallback_ok,
         # Grouped view for the merged app.
         "radar": {
             "llm_configured": radar_ok,

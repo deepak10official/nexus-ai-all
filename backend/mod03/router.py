@@ -48,6 +48,8 @@ def log_config() -> None:
              settings.image_model, settings.hf_provider, settings.image_licence)
     log.info("region: %s | text configured=%s | image configured=%s",
              settings.trend_region, settings.configured, settings.image_configured)
+    log.info("trend sources: trends24 (primary) | ScrapeBadger fallback %s",
+             "armed" if settings.scrapebadger_api_key else "NOT configured")
 
 
 # Generated images are written to disk and served from here, so the

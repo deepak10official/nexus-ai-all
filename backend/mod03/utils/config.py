@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     trend_region: str = "india"
     trend_cache_minutes: int = 30
 
+    # Fallback trend source, used only when the trends24 scrape fails.
+    # Leave the key blank to disable the fallback entirely.
+    scrapebadger_api_key: str = ""
+    scrapebadger_base_url: str = "https://scrapebadger.com"
+    # Override the region -> WOEID lookup. 0 means "use the mapping".
+    # India is 23424848, worldwide is 1.
+    trend_woeid: int = 0
+
     # Image generation (Hugging Face Inference Providers)
     hf_token: str = ""
     # "auto" lets Hugging Face route to whichever provider is currently

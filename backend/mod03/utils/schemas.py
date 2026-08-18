@@ -98,7 +98,7 @@ class ScoredTrend(BaseModel):
 class TrendFeed(BaseModel):
     region: str
     fetched_at: datetime
-    tier: Literal["live", "cache"]
+    tier: Literal["live", "api", "cache"]
     tier_note: str
     trends: list[ScoredTrend]
 
