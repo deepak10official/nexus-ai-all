@@ -142,6 +142,37 @@ def build_chat_model(settings: Optional[Settings] = None, *, temperature: Option
     raise LLMConfigError(f"Unknown provider: {settings.provider!r}")
 
 
+def build_vision_model(settings: Optional[Settings] = None):
+    """Create a Groq-hosted vision model for image description.
+
+    Uses the vision-capable model (e.g. qwen/qwen3.8-27b) without structured
+    output — just plain chat for describing images.
+    """
+
+    settings = settings or get_settings()
+    if not settings.groq_api_key:
+        raise LLMConfigError(
+            "GROQ_API_KEY is not set. Set it in your environment or .env file."
+        )
+    try:
+        from langchain_groq import ChatGroq
+    except ImportError as exc:
+        raise LLMConfigError(
+            "langchain-groq is not installed. Run `pip install langchain-groq`."
+        ) from exc
+
+    model_name = settings.groq_vision_model
+    log.info("Building GROQ vision model '%s'", model_name)
+    return ChatGroq(
+        model=model_name,
+        api_key=settings.groq_api_key,
+        temperature=0.3,  # low temperature for factual image description
+        max_tokens=settings.max_tokens,
+        max_retries=settings.groq_max_retries,
+        reasoning_effort="none",
+    )
+
+
 def agent_memory_model(settings: Settings | None = None):
     """Placeholder — not implemented yet."""
     raise NotImplementedError("agent_memory_model is not implemented yet.")

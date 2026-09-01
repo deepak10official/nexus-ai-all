@@ -67,8 +67,9 @@ class PanelResult(BaseModel):
     votes: List[PersonaVote] = Field(description="Every persona's ballot.")
     approve_count: int = Field(description="Number of APPROVE ballots.")
     reject_count: int = Field(description="Number of REJECT ballots.")
-    threshold: int = Field(description="APPROVE votes required to pass.")
+    threshold: float = Field(description="Approval percentage required to pass (0-100).")
     passed: bool = Field(description="True when approve_count >= threshold.")
+    image_url: Optional[str] = Field(default=None, description="Image URL attached to this round.")
 
     @property
     def total_votes(self) -> int:
@@ -122,6 +123,7 @@ class Persona:
     location: str
     occupation: str
     archetype: str
+    category: str = ""   # life-stage group (e.g. "Students & Early Career")
     tagline: str = ""  # short one-liner shown on the persona card
     emoji: str = ""
     profile: str = ""  # prompt-ready profile text (markdown body)

@@ -35,6 +35,7 @@ from backend.mod02.agents.panel import VotingPanel
 from backend.mod02.agents.reviser import ReviserAgent
 from backend.core.logging import get_logger
 from backend.mod02.utils.schemas import PanelResult
+from backend.mod02.utils.vision import describe_image, resolve_image_b64
 from backend.mod02.utils.voting import format_full_feedback
 
 log = get_logger("graph")
@@ -65,6 +66,10 @@ class PanelState(TypedDict, total=False):
     revised_post: Optional[str]  # latest reviser output (for the UI)
     decision: str  # last human decision: rework | revote | stop
     max_rounds: int  # revision budget (auto mode only)
+    image_b64: Optional[str]  # base64-encoded image (if uploaded)
+    image_url: Optional[str]  # URL to the image (for the UI)
+    validate_text: bool  # whether to validate post text
+    validate_image: bool  # whether to validate attached image
 
 
 def _make_nodes(panel: VotingPanel, reviser: ReviserAgent):
@@ -73,12 +78,27 @@ def _make_nodes(panel: VotingPanel, reviser: ReviserAgent):
     def vote(state: PanelState) -> PanelState:
         round_no = len(state.get("rounds", [])) + 1
         log.info("Graph: vote node (round %d)", round_no)
+
+        b64 = state.get("image_b64")
+        img_url = state.get("image_url")
+        if not b64 and img_url:
+            b64 = resolve_image_b64(None, img_url)
+
+        val_text = state.get("validate_text", True)
+        val_img = state.get("validate_image", True)
+
         result = panel.evaluate(
             state["current_post"],
             previous_feedback=state.get("feedback") or None,
             previous_post=state.get("previous_post") or None,
+            image_b64=b64,
+            image_url=img_url,
+            validate_text=val_text,
+            validate_image=val_img,
         )
         return {"rounds": [result], "passed": result.passed}
+
+
 
     def revise(state: PanelState) -> PanelState:
         last = state["rounds"][-1]

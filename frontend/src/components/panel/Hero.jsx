@@ -17,9 +17,10 @@ function Stat({ icon: Icon, value, label }) {
   );
 }
 
-export default function Hero({ settings }) {
-  const threshold = settings?.approval_threshold ?? 3;
-  const panelSize = settings?.panel_size ?? 5;
+export default function Hero({ settings, selectedCount }) {
+  const threshold = settings?.approval_threshold ?? 60;
+  const thresholdLabel = settings?.approval_threshold_label ?? `≥${threshold}%`;
+  const panelSize = selectedCount ?? settings?.panel_size ?? 15;
 
   return (
     <section className="mx-auto flex max-w-7xl flex-col items-center px-5 pt-12 text-center sm:px-8 sm:pt-16">
@@ -38,7 +39,7 @@ export default function Hero({ settings }) {
         transition={{ duration: 0.6, delay: 0.05 }}
         className="mt-4 max-w-3xl font-display text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-6xl"
       >
-        Five consumers. <span className="gradient-text">One verdict.</span>
+        {panelSize} consumers. <span className="gradient-text">One verdict.</span>
       </motion.h1>
 
       <motion.p
@@ -50,9 +51,9 @@ export default function Hero({ settings }) {
         Every financial post is judged by a panel of synthetic Indian
         consumers — from a cash-first retiree to a fintech power user. It needs{" "}
         <span className="font-semibold text-zinc-200">
-          {threshold} of {panelSize}
+          {thresholdLabel}
         </span>{" "}
-        approvals to pass. When it fails, rework it from their feedback and vote
+        approval to pass. When it fails, rework it from their feedback and vote
         again. Nothing ships without the panel saying yes.
       </motion.p>
 
@@ -63,7 +64,7 @@ export default function Hero({ settings }) {
         className="mt-8 flex flex-wrap items-center justify-center gap-x-9 gap-y-4"
       >
         <Stat icon={Users} value={panelSize} label="Panelists" />
-        <Stat icon={ShieldCheck} value={`${threshold}/${panelSize}`} label="Pass threshold" />
+        <Stat icon={ShieldCheck} value={thresholdLabel} label="Pass threshold" />
         <Stat icon={Sparkles} value="Live" label="Structured votes" />
       </motion.div>
     </section>

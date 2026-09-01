@@ -240,15 +240,16 @@ export default function DraftPanel({
       if (target === "final") setFinalDecision(res);
 
       // Approved copy is what the Persona Panel validates, so send the wording
-      // over to MOD02 as soon as it is approved. The image is a separate
-      // concern — the panel only judges text, so it must not gate this.
+      // (and approved image if available) over to MOD02 as soon as approved.
       // Approving the copy loads the draft without stealing focus; the final
       // approval ends the MOD03 flow, so that one switches the view.
-      if (action === "approve" && (target === "post" || target === "final") && onHandoff) {
+      if (action === "approve" && (target === "post" || target === "final" || target === "image") && onHandoff) {
+        const isImgApproved = target === "image" ? action === "approve" : imageStatus === "approved";
         onHandoff({
           draft_id: draft.draft_id,
           post: draft.post.post_text,
           hashtags: draft.post.hashtags ?? [],
+          image_url: isImgApproved && image?.url ? image.url : null,
           switchTo: target === "final",
         });
         setSentToPanel(true);

@@ -25,11 +25,19 @@ log = get_logger("panel")
 def _default_agents(
     settings: Settings, cache: Optional[VoteCache]
 ) -> List[PersonaAgent]:
-    """Build the standard five persona agents from their individual modules."""
+    """Build the standard fifteen persona agents from their individual modules."""
 
-    from backend.mod02.agents import arjun, kavya, meena, ramesh, suresh
+    from backend.mod02.agents import (
+        arjun, kavya, meena, ramesh, suresh,
+        priya, vikram, fatima, dev_c, lakshmi,
+        rohit, ananya, harish, zara, thomas,
+    )
 
-    builders = [suresh, meena, arjun, kavya, ramesh]
+    builders = [
+        suresh, meena, arjun, kavya, ramesh,
+        priya, vikram, fatima, dev_c, lakshmi,
+        rohit, ananya, harish, zara, thomas,
+    ]
     return [m.build_agent(settings=settings, cache=cache) for m in builders]
 
 
@@ -62,29 +70,51 @@ class VotingPanel:
         post: str,
         previous_feedback: Optional[str] = None,
         previous_post: Optional[str] = None,
+        image_b64: Optional[str] = None,
+        image_url: Optional[str] = None,
+        validate_text: bool = True,
+        validate_image: bool = True,
     ) -> PanelResult:
         """Collect every persona's vote and tally the outcome.
 
         ``previous_post`` and ``previous_feedback`` are set on re-votes so each
         persona sees the earlier version, the feedback it received, and knows
         the current post is the rework.
+
+        ``image_b64`` is base64-encoded image data sent directly to each persona
+        agent in a multimodal prompt using qwen/qwen3.8-27b on Groq.
         """
 
         mode = "parallel" if (self.parallel and len(self.agents) > 1) else "sequential"
+        tag = (
+            " [text+image]" if (validate_text and validate_image and image_b64)
+            else " [image-only]" if (validate_image and image_b64)
+            else " [text-only]"
+        )
         log.info(
-            "Panel evaluating post with %d agents (%s)...", len(self.agents), mode
+            "Panel evaluating post with %d agents (%s)%s...",
+            len(self.agents),
+            mode,
+            tag,
         )
         started = time.perf_counter()
 
         if self.parallel and len(self.agents) > 1:
-            votes = self._vote_parallel(post, previous_feedback, previous_post)
+            votes = self._vote_parallel(
+                post, previous_feedback, previous_post, image_b64,
+                validate_text=validate_text, validate_image=validate_image,
+            )
         else:
             votes = [
-                a.vote(post, previous_feedback, previous_post) for a in self.agents
+                a.vote(
+                    post, previous_feedback, previous_post, image_b64,
+                    validate_text=validate_text, validate_image=validate_image,
+                )
+                for a in self.agents
             ]
 
         votes = sort_votes_by(votes, [p.id for p in self.personas])
-        result = tally_votes(post, votes, self.settings.approval_threshold)
+        result = tally_votes(post, votes, self.settings.approval_threshold, image_url=image_url)
         elapsed = time.perf_counter() - started
         log.info(
             "Panel result: %s (A:%d R:%d) -> %s in %.1fs",
@@ -101,10 +131,23 @@ class VotingPanel:
         post: str,
         previous_feedback: Optional[str],
         previous_post: Optional[str] = None,
+        image_b64: Optional[str] = None,
+        validate_text: bool = True,
+        validate_image: bool = True,
     ) -> List[PersonaVote]:
         with ThreadPoolExecutor(max_workers=len(self.agents)) as pool:
             futures = [
-                pool.submit(agent.vote, post, previous_feedback, previous_post)
+                pool.submit(
+                    agent.vote,
+                    post,
+                    previous_feedback,
+                    previous_post,
+                    image_b64,
+                    validate_text,
+                    validate_image,
+                )
                 for agent in self.agents
             ]
             return [f.result() for f in futures]
+
+

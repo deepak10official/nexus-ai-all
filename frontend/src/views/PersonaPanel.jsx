@@ -21,10 +21,10 @@ export default function PersonaPanel({ incomingPost }) {
   // a review already in progress.
   useEffect(() => {
     if (!incomingPost?.post) return;
-    const key = `${incomingPost.draft_id}::${incomingPost.post}`;
+    const key = `${incomingPost.draft_id}::${incomingPost.post}::${incomingPost.image_url || ""}`;
     if (lastHandoff.current === key) return;
     lastHandoff.current = key;
-    newDraft(incomingPost.post);
+    newDraft(incomingPost.post, incomingPost.image_url || null);
   }, [incomingPost, newDraft]);
   const hasRounds = panel.rounds.length > 0;
   const lastRound = hasRounds ? panel.rounds[panel.rounds.length - 1] : null;
@@ -34,7 +34,7 @@ export default function PersonaPanel({ incomingPost }) {
       <NavBar settings={panel.settings} threadId={panel.threadId} />
 
       <main className="pb-8">
-        <Hero settings={panel.settings} />
+        <Hero settings={panel.settings} selectedCount={panel.selectedPersonas?.length} />
 
         {/* Provenance: makes clear this wording arrived from the Trend Radar
             rather than being typed here. */}
@@ -57,7 +57,11 @@ export default function PersonaPanel({ incomingPost }) {
             </div>
           </div>
         ) : null}
-        <PersonaBento personas={panel.personas} />
+        <PersonaBento
+          personas={panel.personas}
+          selectedPersonas={panel.selectedPersonas}
+          onSelectionChange={panel.setSelectedPersonas}
+        />
 
         <PostConsole
           post={panel.post}
@@ -70,6 +74,14 @@ export default function PersonaPanel({ incomingPost }) {
           onRun={panel.runPanel}
           onReworkAndRun={panel.reworkAndRun}
           onNewDraft={() => panel.newDraft("")}
+          image={panel.image}
+          imageUploading={panel.imageUploading}
+          onUploadImage={panel.uploadImage}
+          onRemoveImage={panel.removeImage}
+          validateText={panel.validateText}
+          setValidateText={panel.setValidateText}
+          validateImage={panel.validateImage}
+          setValidateImage={panel.setValidateImage}
         />
 
         {hasRounds ? (
