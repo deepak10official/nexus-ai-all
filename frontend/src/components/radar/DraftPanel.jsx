@@ -512,6 +512,11 @@ export default function DraftPanel({
                 <p className="mt-1 text-[11px] leading-relaxed text-muted">
                   {finalDecision.message}
                 </p>
+
+                <p className="mt-2 text-[11px] leading-relaxed text-muted">
+                  Sent to the Persona Panel. Publishing happens there, once the
+                  personas have approved it.
+                </p>
               </motion.div>
             ) : (
               <>

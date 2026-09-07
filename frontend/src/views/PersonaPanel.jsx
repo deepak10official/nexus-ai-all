@@ -91,7 +91,12 @@ export default function PersonaPanel({ incomingPost }) {
               personas={panel.personas}
               revealKey={panel.revealKey}
             />
-            <OutcomeBanner round={lastRound} roundNumber={panel.rounds.length} />
+            <OutcomeBanner
+              round={lastRound}
+              roundNumber={panel.rounds.length}
+              threadId={panel.threadId}
+              hasImage={!!panel.image?.url}
+            />
           </>
         ) : (
           <EmptyState />

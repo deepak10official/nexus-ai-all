@@ -83,3 +83,100 @@ def detect(text: str) -> dict:
 def is_indic(lang: dict) -> bool:
     """True when the scorer should also try its Hindi keyword lists."""
     return lang["code"] not in ("en",)
+
+
+# ---------------------------------------------------------------------------
+# Caption-level English detection
+#
+# ``detect()`` above is built for trend names: one to three words, where
+# "whichever script has the most characters wins" is a sound rule. Captions
+# break that rule badly. A Gujarati caption ending in English hashtags
+# ("18 વર્ષથી ઓછી ઉંમરના પણ upi વાપરી શકશે . #Banking #BankingTips #UPI")
+# can carry more Latin characters than Gujarati ones, so a max-count vote
+# would call it English.
+#
+# So captions are judged differently: strip everything that is not prose —
+# hashtags, @mentions, URLs, emoji, digits, punctuation — then reject if any
+# meaningful non-Latin script remains. A genuinely English caption has
+# essentially zero Devanagari.
+# ---------------------------------------------------------------------------
+
+_URL_RE = re.compile(r"https?://\S+|www\.\S+")
+_HASHTAG_RE = re.compile(r"[#＃][^\s#＃]+")
+_MENTION_RE = re.compile(r"@[A-Za-z0-9._]+")
+
+# Any codepoint inside a known Indic/Arabic block.
+_NON_LATIN_RANGES = [(lo, hi) for _c, _l, _s, lo, hi in SCRIPT_RANGES]
+
+# Proportion of prose that may be non-Latin before a caption is rejected.
+# Not zero: a single stray character (a name, a quoted word) should not
+# disqualify an otherwise English caption.
+_NON_LATIN_TOLERANCE = 0.05
+
+
+def caption_prose(text: str) -> str:
+    """Strip a caption down to the part that actually carries language.
+
+    Hashtags are removed because they are routinely English on non-English
+    posts — they are tags, not prose, and including them is what makes naive
+    detection fail.
+    """
+
+    if not text:
+        return ""
+    out = _URL_RE.sub(" ", text)
+    out = _HASHTAG_RE.sub(" ", out)
+    out = _MENTION_RE.sub(" ", out)
+    # Keep letters and spaces only: drops emoji, digits and punctuation
+    # without needing to enumerate emoji blocks.
+    out = "".join(ch if (ch.isalpha() or ch.isspace()) else " " for ch in out)
+    return re.sub(r"\s+", " ", out).strip()
+
+
+def _non_latin_ratio(prose: str) -> float:
+    letters = [ch for ch in prose if ch.isalpha()]
+    if not letters:
+        return 0.0
+    hits = 0
+    for ch in letters:
+        cp = ord(ch)
+        for lo, hi in _NON_LATIN_RANGES:
+            if lo <= cp <= hi:
+                hits += 1
+                break
+    return hits / len(letters)
+
+
+def is_english_caption(text: str, min_words: int = 3) -> tuple[bool, str]:
+    """Is this caption usable English prose? Returns (verdict, reason).
+
+    The reason is returned so a rejection can be logged and explained rather
+    than silently dropping someone's post from the reference set.
+    """
+
+    prose = caption_prose(text)
+    if not prose:
+        return False, "no prose (hashtags/emoji only)"
+
+    words = prose.split()
+    if len(words) < min_words:
+        # Too short to judge. Excluded deliberately: a two-word caption adds
+        # nothing as drafting context anyway.
+        return False, f"too short ({len(words)} words)"
+
+    ratio = _non_latin_ratio(prose)
+    if ratio > _NON_LATIN_TOLERANCE:
+        return False, f"non-Latin script ({ratio:.0%} of letters)"
+
+    flat = re.sub(r"[\s_\-]+", "", prose.lower())
+    for marker in ROMANISED_HINDI:
+        if marker in flat:
+            return False, f"romanised Hindi ('{marker}')"
+
+    return True, "English"
+
+
+def english_captions(items: list[dict], caption_key: str = "caption") -> list[dict]:
+    """Keep only the items whose caption reads as English prose."""
+
+    return [it for it in items if is_english_caption(it.get(caption_key) or "")[0]]

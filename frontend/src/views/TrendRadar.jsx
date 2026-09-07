@@ -12,6 +12,7 @@ import {
 import * as api from "../api/radarApi.js";
 import TrendFeed from "../components/radar/TrendFeed.jsx";
 import DraftPanel from "../components/radar/DraftPanel.jsx";
+import HashtagMedia from "../components/radar/HashtagMedia.jsx";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 22 },
@@ -417,7 +418,9 @@ export default function TrendRadar({ onHandoff }) {
             initial="hidden"
             animate="show"
             custom={5}
+            className="space-y-3"
           >
+            {selected && <HashtagMedia hashtag={selected.name} />}
             <DraftPanel
               selected={selected}
               draft={draft}

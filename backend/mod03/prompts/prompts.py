@@ -37,7 +37,25 @@ TREND_CONTEXT = """CURRENT TREND TO REACT TO:
 - Topic category: {category}
 - BBPS Relevance Score: {score}/100 ({band})
 - Why it scored that way: {rationale}
-- Other trends live alongside it right now: {neighbours}"""
+- Other trends live alongside it right now: {neighbours}
+{reference_block}"""
+
+# Real Instagram captions currently posted under this hashtag. Injected only
+# when the lookup succeeded — an empty string otherwise, so the prompt reads
+# identically to before when there is nothing to show.
+REFERENCE_TEMPLATE = """
+WHAT PEOPLE ARE ACTUALLY POSTING UNDER THIS HASHTAG ON INSTAGRAM:
+{captions}
+
+Use these to understand the tone, angle and intent of the conversation. Match \
+the register people are actually using. Do NOT copy phrasing, claims or \
+offers from them — they are other people's posts, not source material.
+
+Let this context shape the image_prompt as well, not just the wording: the \
+scene you describe should sit naturally alongside what people are already \
+posting under this hashtag — same kind of setting, same everyday reality. \
+Only these English captions were used; posts in other languages were \
+excluded, so do not assume the full conversation is represented."""
 
 # 3. GOAL ─────────────────────────────────────────────────────────────
 GOAL = """YOUR GOAL:

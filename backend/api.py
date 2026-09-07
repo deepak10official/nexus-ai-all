@@ -77,6 +77,7 @@ def health():
     image_licence = None
     region = None
     fallback_ok = False
+    ig_ok = fb_ok = gh_ok = False
     detail = {}
 
     try:
@@ -89,6 +90,13 @@ def health():
         image_licence = getattr(radar_settings, "image_licence", None)
         region = getattr(radar_settings, "trend_region", None)
         fallback_ok = bool(getattr(radar_settings, "scrapebadger_api_key", ""))
+        from backend.mod03.services import facebook as _fb
+        from backend.mod03.services import github_upload as _gh
+        from backend.mod03.services import instagram as _ig
+
+        ig_ok = _ig.is_configured()
+        fb_ok = _fb.is_configured()
+        gh_ok = _gh.is_configured()
     except Exception as exc:
         detail["radar"] = str(exc)
 
@@ -116,6 +124,9 @@ def health():
         "image_licence": image_licence,
         "region": region,
         "trend_fallback_configured": fallback_ok,
+        "instagram_configured": ig_ok,
+        "facebook_configured": fb_ok,
+        "image_host_configured": gh_ok,
         # Grouped view for the merged app.
         "radar": {
             "llm_configured": radar_ok,

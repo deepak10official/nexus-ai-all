@@ -64,4 +64,9 @@ export const api = {
     }
     return res.json();
   },
+  publish: (threadId, platform) =>
+    request("/api/panel/publish", {
+      method: "POST",
+      body: JSON.stringify({ thread_id: threadId, platform }),
+    }),
 };

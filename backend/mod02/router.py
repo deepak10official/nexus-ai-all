@@ -29,7 +29,7 @@ import base64
 import os
 import uuid
 from functools import lru_cache
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from langgraph.types import Command
@@ -41,6 +41,11 @@ from backend.mod02.model.factory import LLMConfigError
 from backend.mod02.prompts import PERSONAS, get_persona, get_persona_prompt
 from backend.mod02.agents.base import PersonaAgent
 from backend.mod02.utils.config import get_settings
+# Publishing lives in mod03/services because that is where the Meta client was
+# first built. It is driven from here now: the panel is the only place a post
+# can be published from, so nothing goes live without persona validation.
+from backend.mod03.services import facebook, github_upload, instagram
+
 from backend.core.logging import get_log_file, get_logger, start_run_log
 
 log = get_logger("api")
@@ -168,6 +173,13 @@ def _state_payload(cfg: dict, graph=None) -> dict:
 
 
 # ----- request bodies ----------------------------------------------------------
+
+class PublishBody(BaseModel):
+    """Publish a post that has passed the panel, to one platform."""
+
+    thread_id: str
+    platform: Literal["instagram", "facebook"]
+
 
 class RunBody(BaseModel):
     thread_id: str
@@ -469,3 +481,82 @@ async def upload_image(file: UploadFile = File(...)):
         "filename": filename,
         "size_kb": len(data) // 1024,
     }
+
+
+@router.post("/publish")
+def publish(body: PublishBody):
+    """Publish a panel-approved post to one platform.
+
+    The pass is re-checked here rather than trusted from the client: the UI
+    only shows these buttons after a pass, but a publish is irreversible on
+    Instagram, so the server must not take the caller's word for it.
+
+    One platform per call, matching the two separate buttons — a Facebook
+    failure should not be entangled with an Instagram success.
+    """
+
+    cfg = _cfg(body.thread_id)
+    graph = _graph_or_503()
+
+    try:
+        values = graph.get_state(cfg).values or {}
+    except Exception:
+        raise HTTPException(404, "Unknown session — run the panel first.")
+
+    rounds = values.get("rounds", []) or []
+    if not rounds:
+        raise HTTPException(409, "Nothing to publish — run the panel first.")
+
+    last = rounds[-1]
+    if not last.passed:
+        raise HTTPException(
+            409,
+            f"This post did not pass the panel ({last.tally}). Rework it and "
+            "run again before publishing.",
+        )
+
+    # The post that passed, which may be a reworked version rather than the
+    # original draft.
+    caption = (values.get("current_post") or last.post or "").strip()
+    if not caption:
+        raise HTTPException(409, "The approved post has no text to publish.")
+
+    image_url = values.get("image_url") or None
+
+    if body.platform == "instagram":
+        if not image_url:
+            raise HTTPException(
+                409,
+                "Instagram requires an image. Attach one and re-run the panel, "
+                "or publish to Facebook instead.",
+            )
+        try:
+            public_url = github_upload.ensure_public_url(image_url)
+        except Exception as exc:  # noqa: BLE001
+            log.error("image upload failed | %s", exc)
+            raise HTTPException(502, f"Could not host the image: {exc}")
+        try:
+            result = instagram.publish_image(public_url, caption)
+        except Exception as exc:  # noqa: BLE001
+            log.error("IG publish failed | %s", exc)
+            raise HTTPException(502, str(exc))
+    else:
+        # Facebook publishes text-only happily; the image is a bonus.
+        public_url = None
+        if image_url:
+            try:
+                public_url = github_upload.ensure_public_url(image_url)
+            except Exception as exc:  # noqa: BLE001
+                # Not fatal — fall back to a text post rather than failing.
+                log.warning("image upload failed, posting text only | %s", exc)
+        try:
+            result = facebook.publish(caption, image_url=public_url)
+        except Exception as exc:  # noqa: BLE001
+            log.error("FB publish failed | %s", exc)
+            raise HTTPException(502, str(exc))
+
+    log.info(
+        "PUBLISHED from panel | platform=%s | thread=%s | post_id=%s",
+        body.platform, body.thread_id[:8], result.get("post_id"),
+    )
+    return result

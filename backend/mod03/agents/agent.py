@@ -106,6 +106,7 @@ def generate_post(
     region: str,
     language_label: str = "English",
     category: str = "Other",
+    reference_captions: list[str] | None = None,
 ) -> tuple[SocialPost, str, int]:
     """Returns (post, model_name, latency_ms). Raises AgentError on failure."""
     parser = PydanticOutputParser(pydantic_object=SocialPost)
@@ -113,9 +114,20 @@ def generate_post(
     llm = _llm()
     chain = prompt | llm
 
+    # Ground the draft in real captions when we have them; otherwise the
+    # block collapses to an empty string and the prompt is unchanged.
+    if reference_captions:
+        from backend.mod03.prompts.prompts import REFERENCE_TEMPLATE
+
+        numbered = "\n".join(f"{i}. {c}" for i, c in enumerate(reference_captions, 1))
+        reference_block = REFERENCE_TEMPLATE.format(captions=numbered)
+    else:
+        reference_block = ""
+
     inputs = {
         "hashtag": hashtag,
         "region": region,
+        "reference_block": reference_block,
         "score": score,
         "band": band,
         "rationale": rationale,
