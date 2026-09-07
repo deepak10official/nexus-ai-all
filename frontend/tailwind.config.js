@@ -21,7 +21,7 @@ export default {
         violet: "#A78BFA",
         chalk: "#E9EDF5",
         muted: "#7E8AA0",
-        // MOD02 — Persona Panel
+        // MOD02 — Persona Panel + MOD05 — Social Calendar
         neon: {
           amber: "#f59e0b",
           orange: "#f97316",
@@ -29,6 +29,8 @@ export default {
           teal: "#2dd4bf",
           emerald: "#34d399",
           rose: "#fb7185",
+          blue: "#0A66C2",    // LinkedIn
+          sky: "#38bdf8",     // Twitter/X
         },
       },
       boxShadow: {
