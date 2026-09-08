@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePanel } from "../hooks/usePanel.js";
 import NavBar from "../components/panel/NavBar.jsx";
 import Hero from "../components/panel/Hero.jsx";
@@ -9,10 +9,11 @@ import OutcomeBanner from "../components/panel/OutcomeBanner.jsx";
 import EmptyState from "../components/panel/EmptyState.jsx";
 import Footer from "../components/panel/Footer.jsx";
 
-export default function PersonaPanel({ incomingPost }) {
+export default function PersonaPanel({ incomingPost, onApproved }) {
   const panel = usePanel();
   const lastHandoff = useRef(null);
   const { newDraft } = panel;
+  const [sentToCalendar, setSentToCalendar] = useState(false);
 
   // A draft handed over from the Trend Radar starts a clean review session with
   // that wording already loaded, so the reviewer just presses Run the panel.
@@ -94,8 +95,22 @@ export default function PersonaPanel({ incomingPost }) {
             <OutcomeBanner
               round={lastRound}
               roundNumber={panel.rounds.length}
-              threadId={panel.threadId}
-              hasImage={!!panel.image?.url}
+              sentToCalendar={sentToCalendar}
+              onSendToCalendar={
+                lastRound?.passed && onApproved
+                  ? () => {
+                      onApproved({
+                        text: panel.post,
+                        image_url: panel.image?.url || null,
+                        hashtags: incomingPost?.hashtags || [],
+                        source_mod: "MOD02",
+                        source_label: "PANEL APPROVED",
+                        draft_id: incomingPost?.draft_id || null,
+                      });
+                      setSentToCalendar(true);
+                    }
+                  : undefined
+              }
             />
           </>
         ) : (

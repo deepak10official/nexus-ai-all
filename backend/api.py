@@ -1,11 +1,13 @@
 """Nexus — unified API.
 
-One FastAPI application serving both modules:
+One FastAPI application serving all modules:
 
-    /api/radar/*   MOD03 National Trend Radar  — scores India X trends and
-                   drafts a Bharat Connect post for human approval.
-    /api/panel/*   MOD02 Persona Panel         — five synthetic consumers vote
-                   APPROVE/REJECT on that draft.
+     /api/radar/*      MOD03 National Trend Radar  — scores India X trends and
+                       drafts a Bharat Connect post for human approval.
+     /api/panel/*      MOD02 Persona Panel         — five synthetic consumers vote
+                       APPROVE/REJECT on that draft.
+     /api/calendar/*   MOD05 Social Calendar       — weekly scheduling view for
+                       approved posts, with approval queue and publish flow.
 
 The two are joined by the handoff endpoint ``POST /api/handoff``: a draft
 approved in the Radar is sent straight into the Panel for validation, in-process
@@ -18,6 +20,7 @@ Run from the project root:
 
 from __future__ import annotations
 
+import asyncio
 import os
 
 from fastapi import FastAPI, HTTPException
@@ -31,11 +34,14 @@ from backend.mod02.router import router as panel_router
 from backend.mod03.router import log_config as radar_log_config
 from backend.mod03.router import router as radar_router
 from backend.mod03.services.imagegen import OUTPUT_DIR
+from backend.calendar_mod import publisher as calendar_publisher
+from backend.calendar_mod.router import POSTS as calendar_posts
+from backend.calendar_mod.router import router as calendar_router
 
 configure_logging()
 log = get_logger("api")
 
-app = FastAPI(title="Nexus — Trend Radar + Persona Panel", version="1.0.0")
+app = FastAPI(title="Nexus — Trend Radar + Persona Panel + Social Calendar", version="1.0.0")
 
 # Single CORS policy for the whole app (each module no longer sets its own).
 _origins = os.getenv(
@@ -52,6 +58,7 @@ app.add_middleware(
 
 app.include_router(radar_router)
 app.include_router(panel_router)
+app.include_router(calendar_router)
 
 # Generated images are served from the app, not the router.
 app.mount("/generated", StaticFiles(directory=OUTPUT_DIR), name="generated")
@@ -59,7 +66,13 @@ app.mount("/generated", StaticFiles(directory=OUTPUT_DIR), name="generated")
 
 @app.on_event("startup")
 def _startup() -> None:
-    log.info("Nexus API starting — radar + panel mounted")
+    log.info("Nexus API starting — radar + panel + calendar mounted")
+
+    # Publish scheduled posts as their time arrives. Without this the calendar
+    # records intent but nothing ever goes live.
+    app.state.scheduler_task = asyncio.create_task(
+        calendar_publisher.scheduler_loop(calendar_posts)
+    )
     try:
         radar_log_config()
     except Exception as exc:  # non-fatal: config logging only
@@ -188,3 +201,10 @@ def handoff(req: HandoffRequest):
         post=post,
         hashtags=hashtags,
     )
+
+
+@app.on_event("shutdown")
+async def _shutdown() -> None:
+    task = getattr(app.state, "scheduler_task", None)
+    if task:
+        task.cancel()
