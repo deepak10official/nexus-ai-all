@@ -31,12 +31,26 @@ export function usePanel() {
   const [error, setError] = useState(null);
   // Bumped on every completed run so the newest round animates its reveal.
   const [revealKey, setRevealKey] = useState(0);
+  // Selected persona IDs — null means "all" (initialized after personas load).
+  const [selectedPersonas, setSelectedPersonas] = useState(null);
   const bootstrapped = useRef(false);
+
+  // Image state: { url, b64 } or null.
+  const [image, setImage] = useState(null);
+  const [imageUploading, setImageUploading] = useState(false);
+
+  // Validation options: Text, Image, or Both
+  const [validateText, setValidateText] = useState(true);
+  const [validateImage, setValidateImage] = useState(true);
 
   const applyState = useCallback((s) => {
     setRounds(s.rounds ?? []);
     setWaiting(!!s.waiting);
     setCanRework(!!s.can_rework);
+    // Persist image_url from backend state if we don't have one locally.
+    if (s.image_url) {
+      setImage((prev) => prev ?? { url: s.image_url, b64: null });
+    }
   }, []);
 
   // One-time bootstrap: personas + settings (+ any existing session state).
@@ -48,6 +62,8 @@ export function usePanel() {
         const [p, s] = await Promise.all([api.personas(), api.settings()]);
         setPersonas(p);
         setSettings(s);
+        // Default: no personas selected.
+        setSelectedPersonas([]);
       } catch (e) {
         setError(
           `Couldn't reach the panel API. Is the backend running on :8000? (${e.message})`
@@ -56,17 +72,53 @@ export function usePanel() {
     })();
   }, []);
 
+  /** Upload an image file and store its URL + base64 data. */
+  const uploadImage = useCallback(async (file) => {
+    setImageUploading(true);
+    setError(null);
+    try {
+      const result = await api.uploadImage(file);
+      setImage({ url: result.image_url, b64: result.image_b64 });
+      setValidateImage(true);
+    } catch (e) {
+      setError(`Image upload failed: ${e.message}`);
+    } finally {
+      setImageUploading(false);
+    }
+  }, []);
+
+  /** Remove the attached image. */
+  const removeImage = useCallback(() => {
+    setImage(null);
+  }, []);
+
   const runPanel = useCallback(async () => {
+    if (!validateText && !validateImage) {
+      setNotice({ kind: "warn", text: "Please select at least one validation target: Text or Image." });
+      return;
+    }
     const text = post.trim();
-    if (!text) {
-      setNotice({ kind: "warn", text: "Please enter a post." });
+    if (validateText && !text) {
+      setNotice({ kind: "warn", text: "Please enter a post to evaluate text." });
+      return;
+    }
+    if (validateImage && !image) {
+      setNotice({ kind: "warn", text: "Please attach an image to evaluate image." });
+      return;
+    }
+    if (!selectedPersonas?.length) {
+      setNotice({ kind: "warn", text: "Please select at least one persona." });
       return;
     }
     setLoading(true);
     setError(null);
     setNotice(null);
     try {
-      const s = await api.run(threadId, text);
+      const s = await api.run(
+        threadId, text, selectedPersonas,
+        image?.b64 || null, image?.url || null,
+        validateText, validateImage,
+      );
       applyState(s);
       setRevealKey((k) => k + 1);
     } catch (e) {
@@ -74,7 +126,7 @@ export function usePanel() {
     } finally {
       setLoading(false);
     }
-  }, [post, threadId, applyState]);
+  }, [post, threadId, selectedPersonas, image, validateText, validateImage, applyState]);
 
   const rework = useCallback(async () => {
     setLoading(true);
@@ -109,7 +161,7 @@ export function usePanel() {
     try {
       const reworked = await api.rework(threadId);
       const revised = (reworked.current_post || "").trim();
-      if (!revised) {
+      if (!revised && validateText) {
         applyState(reworked);
         setNotice({
           kind: "warn",
@@ -117,8 +169,12 @@ export function usePanel() {
         });
         return;
       }
-      setPost(revised);
-      const s = await api.run(threadId, revised);
+      if (revised) setPost(revised);
+      const s = await api.run(
+        threadId, revised || post.trim(), selectedPersonas,
+        image?.b64 || null, image?.url || null,
+        validateText, validateImage,
+      );
       applyState(s);
       setRevealKey((k) => k + 1);
     } catch (e) {
@@ -126,10 +182,10 @@ export function usePanel() {
     } finally {
       setLoading(false);
     }
-  }, [threadId, applyState]);
+  }, [threadId, selectedPersonas, post, image, validateText, validateImage, applyState]);
 
   /** Clear the board and start a brand-new draft on a fresh graph thread. */
-  const newDraft = useCallback((text = "") => {
+  const newDraft = useCallback((text = "", initialImageUrl = null) => {
     setThreadId(newThreadId());
     setRounds([]);
     setWaiting(false);
@@ -137,6 +193,9 @@ export function usePanel() {
     setNotice(null);
     setError(null);
     setPost(text);
+    setImage(initialImageUrl ? { url: initialImageUrl, b64: null } : null);
+    setValidateText(true);
+    setValidateImage(!!initialImageUrl);
     setRevealKey(0);
   }, []);
 
@@ -156,6 +215,16 @@ export function usePanel() {
     setNotice,
     error,
     revealKey,
+    selectedPersonas,
+    setSelectedPersonas,
+    image,
+    imageUploading,
+    validateText,
+    setValidateText,
+    validateImage,
+    setValidateImage,
+    uploadImage,
+    removeImage,
     runPanel,
     rework,
     reworkAndRun,
@@ -163,3 +232,4 @@ export function usePanel() {
     reset,
   };
 }
+

@@ -11,10 +11,16 @@ import re
 import time
 from typing import Optional, Tuple
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 
-from backend.mod02.model.factory import build_chat_model
-from backend.mod02.prompts.base import prompt_values
+from backend.mod02.model.factory import build_chat_model, build_vision_model
+from backend.mod02.prompts.base import (
+    HUMAN_TEMPLATE,
+    SYSTEM_TEMPLATE,
+    format_revision_context,
+    prompt_values,
+)
 from backend.mod02.utils.cache import VoteCache
 from backend.mod02.utils.config import Settings, get_settings
 from backend.core.logging import get_logger
@@ -90,28 +96,35 @@ class PersonaAgent:
         self.settings = settings or get_settings()
         self.cache = cache
         self.log = get_logger(f"agent.{persona.id}")
-        base_llm = llm or build_chat_model(self.settings)
-        # Constrain output to the vote schema; the prompt already has the persona
-        # profile baked in, so only post/revision_context vary at runtime.
-        # ``function_calling`` (the provider default) makes some models answer in
-        # prose instead of calling the tool — set STRUCTURED_OUTPUT_METHOD to
-        # json_schema/json_mode to ask for raw JSON instead.
+        self.prompt = prompt
+        self.base_llm = llm or build_chat_model(self.settings)
+
         method = getattr(self.settings, "structured_output_method", "function_calling")
+        structured = self._build_structured(self.base_llm, method)
+        self._chain = prompt | structured
+        self._vision_structured = None
+
+    def _build_structured(self, llm, method: str):
         try:
-            structured = (
-                base_llm.with_structured_output(PersonaVote)
+            return (
+                llm.with_structured_output(PersonaVote)
                 if method == "function_calling"
-                else base_llm.with_structured_output(PersonaVote, method=method)
+                else llm.with_structured_output(PersonaVote, method=method)
             )
         except (TypeError, ValueError) as exc:
-            # Provider/binding doesn't support this method — fall back safely.
             self.log.warning(
-                "structured output method %r unavailable (%s); using the default.",
+                "structured output method %r unavailable (%s); using default.",
                 method,
                 exc,
             )
-            structured = base_llm.with_structured_output(PersonaVote)
-        self._chain = prompt | structured
+            return llm.with_structured_output(PersonaVote)
+
+    def _get_vision_structured(self):
+        if self._vision_structured is None:
+            vision_llm = build_vision_model(self.settings)
+            method = getattr(self.settings, "structured_output_method", "function_calling")
+            self._vision_structured = self._build_structured(vision_llm, method)
+        return self._vision_structured
 
     @property
     def model_name(self) -> str:
@@ -126,15 +139,26 @@ class PersonaAgent:
         post: str,
         previous_feedback: Optional[str] = None,
         previous_post: Optional[str] = None,
+        image_b64: Optional[str] = None,
+        validate_text: bool = True,
+        validate_image: bool = True,
     ) -> PersonaVote:
         """Return this persona's structured vote for ``post``.
 
-        On a re-vote, ``previous_post`` + ``previous_feedback`` give the voter
-        the full history: what the earlier version said, what the panel said
-        about it, and that the current post is the rework.
+        Supports three modes:
+        - validate_text=True, validate_image=False -> Text-only evaluation
+        - validate_text=False, validate_image=True -> Image-only evaluation
+        - validate_text=True, validate_image=True  -> Both text & image evaluation
         """
 
-        cacheable = previous_feedback is None and self.cache is not None
+        use_image = bool(validate_image and image_b64)
+        use_text = bool(validate_text)
+
+        cacheable = (
+            previous_feedback is None
+            and not use_image
+            and self.cache is not None
+        )
         if cacheable:
             cached = self.cache.get(self.persona.id, post, self.model_name)
             if cached is not None:
@@ -147,17 +171,60 @@ class PersonaAgent:
                 return cached
 
         is_revote = previous_feedback is not None
+        active_model = self.settings.groq_vision_model if use_image else self.model_name
+        mode_label = (
+            "text+image" if (use_text and use_image)
+            else "image-only" if use_image
+            else "text-only"
+        )
         self.log.info(
-            "%s %s thinking... (model=%s, pass=%s)",
+            "%s %s thinking... (model=%s, pass=%s, mode=%s)",
             self.persona.emoji,
             self.persona.name,
-            self.model_name,
+            active_model,
             "re-vote" if is_revote else "first",
+            mode_label,
         )
         self.log.debug("post under review: %s", post.strip().replace("\n", " "))
         started = time.perf_counter()
-        values = prompt_values(post, previous_feedback, previous_post)
-        vote = self._invoke_with_retry(values)
+
+        if use_image:
+            # Multimodal prompt with image (and optional text)
+            sys_text = SYSTEM_TEMPLATE.format(
+                persona_profile=self.persona.profile_block(),
+                persona_name=self.persona.name,
+            )
+            if use_text:
+                hum_text = HUMAN_TEMPLATE.format(
+                    post=post.strip(),
+                    revision_context=format_revision_context(previous_feedback, previous_post),
+                    persona_name=self.persona.name,
+                )
+            else:
+                rev_ctx = format_revision_context(previous_feedback, previous_post)
+                hum_text = (
+                    "# Image under review\n"
+                    "Please review the attached marketing image intended for Indian consumers.\n"
+                    f"{rev_ctx}\n"
+                    f"Cast your vote now as {self.persona.name} evaluating this image."
+                )
+
+            messages = [
+                SystemMessage(content=sys_text),
+                HumanMessage(
+                    content=[
+                        {"type": "text", "text": hum_text},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"},
+                        },
+                    ]
+                ),
+            ]
+            vote = self._invoke_vision_with_retry(messages)
+        else:
+            values = prompt_values(post, previous_feedback, previous_post)
+            vote = self._invoke_with_retry(values)
 
         vote.persona_id = self.persona.id
         vote.persona_name = self.persona.name
@@ -172,8 +239,6 @@ class PersonaAgent:
             vote.confidence,
             elapsed,
         )
-        # Full ballot detail, so the log file is a complete audit trail of every
-        # iteration rather than just the verdicts.
         reasoning = (vote.reasoning or "").strip().replace("\n", " ")
         if reasoning:
             self.log.info("    reasoning: %s", reasoning)
@@ -185,15 +250,47 @@ class PersonaAgent:
             self.cache.set(self.persona.id, post, self.model_name, vote)
         return vote
 
-    def _invoke_with_retry(self, values) -> PersonaVote:
-        """Call the model, retrying transient structured-output failures.
+    def _invoke_vision_with_retry(self, messages: list) -> PersonaVote:
+        attempts = max(1, getattr(self.settings, "persona_max_attempts", 2))
+        last_exc: Optional[Exception] = None
+        structured = self._get_vision_structured()
 
-        ``tool_use_failed`` happens when the model answers in prose instead of
-        calling the vote function. It is stochastic, so a retry usually works.
-        If every attempt fails we salvage the model's prose from the error
-        payload — that text *is* the persona's opinion, and discarding it in
-        favour of a blind REJECT would corrupt the tally.
-        """
+        for attempt in range(1, attempts + 1):
+            try:
+                return structured.invoke(messages)
+            except Exception as exc:
+                last_exc = exc
+                self.log.warning(
+                    "%s vision attempt %d/%d failed: %s",
+                    self.persona.name,
+                    attempt,
+                    attempts,
+                    str(exc)[:200],
+                )
+                if attempt < attempts:
+                    time.sleep(0.6 * attempt)
+
+        prose = _extract_failed_generation(last_exc) if last_exc else ""
+        if prose:
+            decision, confidence = _infer_decision(prose)
+            self.log.warning(
+                "%s: recovered unstructured vision answer -> %s",
+                self.persona.name,
+                decision.value,
+            )
+            return PersonaVote(
+                decision=decision,
+                confidence=confidence,
+                reasoning=prose,
+                suggested_changes=None,
+                persona_id=self.persona.id,
+                persona_name=self.persona.name,
+            )
+
+        return self._fallback_vote(str(last_exc))
+
+    def _invoke_with_retry(self, values) -> PersonaVote:
+        """Call the model, retrying transient structured-output failures."""
 
         attempts = max(1, getattr(self.settings, "persona_max_attempts", 2))
         last_exc: Optional[Exception] = None
@@ -201,7 +298,7 @@ class PersonaAgent:
         for attempt in range(1, attempts + 1):
             try:
                 return self._chain.invoke(values)
-            except Exception as exc:  # pragma: no cover - network/LLM dependent
+            except Exception as exc:
                 last_exc = exc
                 self.log.warning(
                     "%s attempt %d/%d failed: %s",

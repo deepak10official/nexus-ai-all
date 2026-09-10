@@ -19,7 +19,11 @@ from backend.mod02.prompts.reviser import PROMPT as REVISER_PROMPT
 from backend.mod02.utils.schemas import Persona
 
 # Canonical panel ordering (also the order shown in the UI).
-PERSONA_ORDER: List[str] = ["suresh", "meena", "arjun", "kavya", "ramesh"]
+PERSONA_ORDER: List[str] = [
+    "suresh", "meena", "arjun", "kavya", "ramesh",       # original five
+    "priya", "vikram", "fatima", "dev", "lakshmi",        # new batch 1
+    "rohit", "ananya", "harish", "zara", "thomas",        # new batch 2
+]
 
 
 def _build_persona(persona_id: str) -> Persona:
@@ -31,6 +35,7 @@ def _build_persona(persona_id: str) -> Persona:
         location=str(meta.get("location", "")),
         occupation=str(meta.get("occupation", "")),
         archetype=str(meta.get("archetype", "")),
+        category=str(meta.get("category", "")),
         tagline=str(meta.get("tagline", "")),
         emoji=str(meta.get("emoji", "")),
         profile=body,

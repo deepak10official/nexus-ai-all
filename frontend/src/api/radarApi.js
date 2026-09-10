@@ -39,3 +39,12 @@ export const decide = (draft_id, action, target = "final") =>
     method: "POST",
     body: JSON.stringify({ draft_id, action, target }),
   });
+
+export const hashtagMedia = (name) =>
+  req(`/api/radar/hashtag-media?name=${encodeURIComponent(name)}`);
+
+export const publishPost = (draft_id, to_instagram = true, to_facebook = true) =>
+  req("/api/radar/publish", {
+    method: "POST",
+    body: JSON.stringify({ draft_id, to_instagram, to_facebook }),
+  });

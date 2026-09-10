@@ -136,3 +136,20 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ===== MOD05 — Social Calendar ===== */
+@layer components {
+  /* Calendar grid cells get a subtle left border for column separation. */
+  .calendar-grid .grid > div + div {
+    border-left: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  /* Platform-specific dot colours for badges (used via inline styles too). */
+    .platform-facebook { color: #1877F2; }
+  .platform-instagram { color: #E1306C; }
+
+  /* Time input in the schedule modal — override browser defaults. */
+  input[type="time"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.7);
+  }
+}

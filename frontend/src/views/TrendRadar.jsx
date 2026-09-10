@@ -12,6 +12,7 @@ import {
 import * as api from "../api/radarApi.js";
 import TrendFeed from "../components/radar/TrendFeed.jsx";
 import DraftPanel from "../components/radar/DraftPanel.jsx";
+import HashtagMedia from "../components/radar/HashtagMedia.jsx";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 22 },
@@ -165,26 +166,6 @@ export default function TrendRadar({ onHandoff }) {
     }
   }
 
-  async function decide(action) {
-    setDeciding(true);
-    try {
-      const result = await api.decide(draft.draft_id, action);
-      setDecision(result);
-      // A fully approved draft is what MOD02's panel validates. Hand the
-      // wording straight over rather than making the user copy it across.
-      if (action === "approve" && onHandoff) {
-        onHandoff({
-          draft_id: draft.draft_id,
-          post: draft.post_text ?? draft.text ?? "",
-          hashtags: draft.hashtags ?? [],
-        });
-      }
-    } catch (e) {
-      setGenError(e.message);
-    } finally {
-      setDeciding(false);
-    }
-  }
 
   const actionable =
     feed?.trends.filter((t) => ["auto_draft", "review"].includes(t.band))
@@ -301,11 +282,18 @@ export default function TrendRadar({ onHandoff }) {
           <Tile
             icon={Database}
             label="Data freshness"
-            value={feed ? (feed.tier === "live" ? "Current" : "Recent") : "—"}
+            value={
+              feed
+                ? { live: "Current", api: "Current", cache: "Recent" }[feed.tier] ?? "Recent"
+                : "—"
+            }
             hint={
-              feed?.tier === "live"
-                ? "Current — these trends were pulled just now, in this scan."
-                : "Recent — the live source could not be reached, so these are from the last successful scan. Press Scan now to retry. The timestamp below shows exactly how old they are."
+              {
+                live: "Current — these trends were pulled just now, in this scan.",
+                api: "Current — trends24 could not be reached, so these were pulled just now from the ScrapeBadger API instead.",
+                cache: "Recent — no live source could be reached, so these are from the last successful scan. Press Scan now to retry. The timestamp below shows exactly how old they are.",
+              }[feed?.tier] ??
+              "Recent — no live source could be reached, so these are from the last successful scan."
             }
             accent="#A78BFA"
             i={3}
@@ -315,7 +303,11 @@ export default function TrendRadar({ onHandoff }) {
         {/* Honest labelling of data freshness */}
         {feed && (
           <p className="mt-3 font-mono text-[11px] text-muted">
-            {feed.tier === "live" ? "Live scan" : "Last available scan"} ·
+            {{
+              live: "Live scan · trends24",
+              api: "Live scan · ScrapeBadger API",
+              cache: "Last available scan",
+            }[feed.tier] ?? "Last available scan"} ·
             India · {new Date(feed.fetched_at).toLocaleTimeString()}
           </p>
         )}
@@ -426,7 +418,9 @@ export default function TrendRadar({ onHandoff }) {
             initial="hidden"
             animate="show"
             custom={5}
+            className="space-y-3"
           >
+            {selected && <HashtagMedia hashtag={selected.name} />}
             <DraftPanel
               selected={selected}
               draft={draft}
@@ -435,6 +429,7 @@ export default function TrendRadar({ onHandoff }) {
               error={genError}
               onGenerate={generate}
               health={health}
+              onHandoff={onHandoff}
             />
           </motion.div>
         </section>

@@ -1,27 +1,59 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Radar, Vote, ArrowRight } from "lucide-react";
+import { Radar, Vote, CalendarDays, ArrowRight } from "lucide-react";
 
 import TrendRadar from "./views/TrendRadar.jsx";
 import PersonaPanel from "./views/PersonaPanel.jsx";
+import SocialCalendar from "./views/SocialCalendar.jsx";
+import * as calendarApi from "./api/calendarApi.js";
 
 const MODULES = [
   { id: "radar", label: "Trend Radar", code: "MOD03", icon: Radar },
   { id: "panel", label: "Persona Panel", code: "MOD02", icon: Vote },
+  { id: "calendar", label: "Social Calendar", icon: CalendarDays },
 ];
 
 export default function App() {
   const [view, setView] = useState("radar");
   const [handoff, setHandoff] = useState(null);
   const [flash, setFlash] = useState(null);
+  const calendarRef = useRef(null);
 
-  // MOD03 approved a draft -> load it into MOD02 and switch to the panel.
+  // MOD03 approved a draft -> make it available to MOD02.
+  // Approving the copy loads it quietly so the MOD03 review flow is not
+  // interrupted; the final approval (or the "Run panel" link) switches over.
   const onHandoff = useCallback((draft) => {
     if (!draft?.post) return;
     setHandoff(draft);
-    setView("panel");
-    setFlash("Draft handed off from Trend Radar — ready for the panel.");
+    if (draft.switchTo) {
+      setView("panel");
+      setFlash("Draft handed off from Trend Radar — ready for the panel.");
+    } else {
+      setFlash("Approved copy sent to the Persona Panel.");
+    }
     window.setTimeout(() => setFlash(null), 6000);
+  }, []);
+
+  // MOD02 panel approved a post -> send it to the Calendar queue.
+  const onApproved = useCallback(async (postData) => {
+    try {
+      await calendarApi.addToQueue({
+        text: postData.text,
+        // Default to a platform we can actually publish to.
+        platform: "instagram",
+        image_url: postData.image_url,
+        source_mod: postData.source_mod || "MOD02",
+        source_label: postData.source_label || "PANEL APPROVED",
+        hashtags: postData.hashtags || [],
+        draft_id: postData.draft_id,
+      });
+      setFlash("✅ Approved post sent to the Calendar queue — switch to the Calendar to schedule it.");
+      // Refresh the calendar's queue if it's already mounted.
+      calendarRef.current?.refresh?.();
+    } catch (e) {
+      setFlash(`Failed to send to calendar: ${e.message}`);
+    }
+    window.setTimeout(() => setFlash(null), 8000);
   }, []);
 
   return (
@@ -52,9 +84,11 @@ export default function App() {
                   )}
                   <Icon className="relative h-4 w-4" strokeWidth={2.2} />
                   <span className="relative">{m.label}</span>
-                  <span className="relative hidden font-mono text-[10px] text-zinc-600 sm:inline">
-                    {m.code}
-                  </span>
+                  {m.code ? (
+                    <span className="relative hidden font-mono text-[10px] text-zinc-600 sm:inline">
+                      {m.code}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
@@ -90,12 +124,15 @@ export default function App() {
         ) : null}
       </AnimatePresence>
 
-      {/* Both views stay mounted so each keeps its state when switching. */}
+      {/* All views stay mounted so each keeps its state when switching. */}
       <div style={{ display: view === "radar" ? "block" : "none" }}>
         <TrendRadar onHandoff={onHandoff} />
       </div>
       <div style={{ display: view === "panel" ? "block" : "none" }}>
-        <PersonaPanel incomingPost={handoff} />
+        <PersonaPanel incomingPost={handoff} onApproved={onApproved} />
+      </div>
+      <div style={{ display: view === "calendar" ? "block" : "none" }}>
+        <SocialCalendar ref={calendarRef} />
       </div>
     </div>
   );

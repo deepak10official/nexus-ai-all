@@ -31,8 +31,22 @@ function Round({ round, index, personaById, animate }) {
       </div>
 
       <GlassCard className="mb-4 p-4">
-        <div className="eyebrow mb-1.5">Post under review</div>
-        <p className="text-[15px] leading-relaxed text-zinc-200">{round.post}</p>
+        <div className="flex flex-col sm:flex-row items-start gap-4">
+          <div className="flex-1">
+            <div className="eyebrow mb-1.5">Post under review</div>
+            <p className="text-[15px] leading-relaxed text-zinc-200">{round.post}</p>
+          </div>
+          {round.image_url && (
+            <div className="shrink-0">
+              <div className="eyebrow mb-1.5">Attached Image</div>
+              <img
+                src={round.image_url}
+                alt="Post attachment"
+                className="h-24 w-36 rounded-lg border border-white/10 object-cover shadow-sm"
+              />
+            </div>
+          )}
+        </div>
       </GlassCard>
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">

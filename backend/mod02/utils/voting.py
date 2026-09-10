@@ -10,19 +10,32 @@ from typing import List
 from backend.mod02.utils.schemas import PanelResult, PersonaVote, VoteDecision
 
 
-def tally_votes(post: str, votes: List[PersonaVote], threshold: int) -> PanelResult:
-    """Count ballots and decide pass/fail against ``threshold`` approvals."""
+def tally_votes(
+    post: str,
+    votes: List[PersonaVote],
+    threshold: float,
+    image_url: Optional[str] = None,
+) -> PanelResult:
+    """Count ballots and decide pass/fail against ``threshold`` percentage.
+
+    ``threshold`` is a float 0-100 representing the minimum percentage of
+    APPROVE votes required to pass.
+    """
 
     approve = sum(v.decision == VoteDecision.APPROVE for v in votes)
     reject = sum(v.decision == VoteDecision.REJECT for v in votes)
+    total = len(votes)
+    approve_pct = (approve / total * 100) if total else 0
     return PanelResult(
         post=post,
         votes=votes,
         approve_count=approve,
         reject_count=reject,
         threshold=threshold,
-        passed=approve >= threshold,
+        passed=approve_pct >= threshold,
+        image_url=image_url,
     )
+
 
 
 def summarize_feedback(result: PanelResult) -> str:

@@ -119,7 +119,8 @@ nexus-ai-all/
 │   │   ├── prompts/prompts.py    # 5 editable prompt blocks
 │   │   ├── services/
 │   │   │   ├── scoring.py        # blocklist + 0-100 relevance + bands
-│   │   │   ├── trend_service.py  # scrape + cache tier, honest freshness labels
+│   │   │   ├── trend_service.py  # source chain + cache tier, honest freshness labels
+│   │   │   ├── scrapebadger.py   # fallback trend source (paid API)
 │   │   │   └── imagegen.py       # FLUX via HuggingFace + brand wordmark
 │   │   └── utils/
 │   │       ├── config.py         # OpenRouter / HF settings
@@ -375,6 +376,8 @@ Everything is environment variables in `.env`. See `.env.example` for the full l
 | `OPENROUTER_MODEL` | `nvidia/nemotron-nano-9b-v2:free` | Any OpenRouter model id. |
 | `TREND_REGION` | `india` | Region for the trend scrape. |
 | `TREND_CACHE_MINUTES` | `30` | How long a scrape stays fresh. |
+| `SCRAPEBADGER_API_KEY` | — | Optional. Fallback trend source when trends24 fails. |
+| `TREND_WOEID` | `0` | Optional. Overrides the region → WOEID lookup (India is 23424848). |
 | `HF_TOKEN` | — | Optional. Image generation. |
 | `IMAGE_MODEL` | `black-forest-labs/FLUX.1-dev` | Use `FLUX.1-schnell` for a commercial-safe licence. |
 
@@ -411,6 +414,22 @@ in `:free`, and update `OPENROUTER_MODEL`. No code change needed.
 ---
 
 ## 10. How MOD03 works
+
+### Trend sources
+
+Trends are fetched from up to three sources, in order:
+
+1. **trends24** (primary) — a free scrape of trends24.in. Costs nothing, but
+   goes slow or dark without warning.
+2. **ScrapeBadger API** (fallback) — a paid API over Twitter's own place-trends
+   endpoint, addressed by WOEID. Used only when the scrape fails, and only if
+   `SCRAPEBADGER_API_KEY` is set.
+3. **Cache** (last resort) — the last good result, however old.
+
+The UI labels which source it is serving rather than pretending: "Live scan ·
+trends24", "Live scan · ScrapeBadger API", or "Last available scan" with a
+timestamp. If every source fails and the cache is empty, the request errors
+rather than showing invented data.
 
 ### Scoring bands
 

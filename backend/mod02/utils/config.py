@@ -54,6 +54,7 @@ class Settings(BaseModel):
     # Groq (default cloud provider, needs GROQ_API_KEY)
     groq_api_key: Optional[str] = None
     groq_model: str = "qwen/qwen3.6-27b"
+    groq_vision_model: str = "qwen/qwen3.8-27b"  # vision-capable model for image analysis
     # Skip the <think> phase on reasoning models (qwen3 etc.). Left on, thinking
     # eats the whole max_tokens budget and structured votes come back empty.
     # Set GROQ_REASONING=true to re-enable it (raise LLM_MAX_TOKENS too).
@@ -94,8 +95,8 @@ class Settings(BaseModel):
     # Fan the five personas out on a thread pool instead of voting one at a
     # time. Much faster, but hits provider rate limits harder.
     panel_parallel: bool = False
-    panel_size: int = 5
-    approval_threshold: int = 3
+    panel_size: int = 15
+    approval_threshold: float = 60.0  # percentage (0-100) of approvals needed
     max_revision_rounds: int = 2
 
     # Optional Redis cache (Upstash or local)
@@ -141,6 +142,7 @@ def get_settings() -> Settings:
         provider=provider,  # type: ignore[arg-type]
         groq_api_key=os.environ.get("GROQ_API_KEY"),
         groq_model=os.environ.get("GROQ_MODEL", "qwen/qwen3.6-27b"),
+        groq_vision_model=os.environ.get("GROQ_VISION_MODEL", "qwen/qwen3.8-27b"),
         groq_reasoning=_bool("GROQ_REASONING"),
         groq_max_retries=_int("GROQ_MAX_RETRIES", 5),
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
@@ -153,8 +155,8 @@ def get_settings() -> Settings:
         structured_output_method=_method(),
         persona_max_attempts=max(1, _int("PERSONA_MAX_ATTEMPTS", 2)),
         panel_parallel=_bool("PANEL_PARALLEL"),
-        panel_size=_int("PANEL_SIZE", 5),
-        approval_threshold=_int("APPROVAL_THRESHOLD", 3),
+        panel_size=_int("PANEL_SIZE", 15),
+        approval_threshold=_float("APPROVAL_THRESHOLD", 60.0),
         max_revision_rounds=_int("MAX_REVISION_ROUNDS", 2),
         redis_url=os.environ.get("REDIS_URL"),
         cache_ttl_seconds=_int("CACHE_TTL_SECONDS", 60 * 60 * 24),

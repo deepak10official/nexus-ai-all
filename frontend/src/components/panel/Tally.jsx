@@ -14,6 +14,9 @@ function Metric({ label, value, accent }) {
 }
 
 export default function Tally({ approve, reject, threshold, passed }) {
+  const total = approve + reject;
+  const approvalPct = total > 0 ? Math.round((approve / total) * 100) : 0;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -36,7 +39,16 @@ export default function Tally({ approve, reject, threshold, passed }) {
       <div className="flex gap-2.5">
         <Metric label="Approve" value={approve} accent="text-neon-emerald" />
         <Metric label="Reject" value={reject} accent="text-neon-rose" />
-        <Metric label="Need" value={threshold} accent="text-white" />
+        <Metric
+          label="Approval %"
+          value={`${approvalPct}%`}
+          accent={passed ? "text-neon-emerald" : "text-neon-rose"}
+        />
+        <Metric
+          label="Need"
+          value={`≥${Math.round(threshold)}%`}
+          accent="text-white"
+        />
       </div>
     </motion.div>
   );

@@ -13,11 +13,13 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 
 from backend.mod03.services import trend_service
 from backend.mod03.agents.agent import AgentError, generate_post
 from backend.mod03.services.imagegen import OUTPUT_DIR, ImageError, generate_image
+from backend.mod03.services import facebook, github_upload, instagram
 from backend.mod03.utils.config import settings
 from backend.core.logging import configure as configure_logging
 from backend.core.logging import current_log_file, get_logger, start_run
@@ -48,6 +50,20 @@ def log_config() -> None:
              settings.image_model, settings.hf_provider, settings.image_licence)
     log.info("region: %s | text configured=%s | image configured=%s",
              settings.trend_region, settings.configured, settings.image_configured)
+    log.info("trend sources: trends24 (primary) | ScrapeBadger fallback %s",
+             "armed" if settings.scrapebadger_api_key else "NOT configured")
+    log.info("meta: instagram=%s | facebook=%s | image host=%s",
+             "configured" if instagram.is_configured() else "NOT configured",
+             "configured" if facebook.is_configured() else "NOT configured",
+             "configured" if github_upload.is_configured() else "NOT configured")
+
+
+class PublishRequest(BaseModel):
+    """Which platforms an approved draft should go live on."""
+
+    draft_id: str
+    to_instagram: bool = True
+    to_facebook: bool = True
 
 
 # Generated images are written to disk and served from here, so the
@@ -135,6 +151,7 @@ def generate(req: GenerateRequest):
             region=settings.trend_region,
             language_label=trend["language_label"],
             category=trend["category"],
+            reference_captions=_reference_captions(trend["name"]),
         )
     except AgentError as e:
         log.error("draft generation failed for %s", trend["name"])
@@ -157,6 +174,127 @@ def generate(req: GenerateRequest):
     log.info("draft stored | id=%s | hashtag=%s | score=%d | band=%s",
              draft.draft_id, draft.hashtag, draft.score, draft.band)
     return draft
+
+
+def _reference_captions(hashtag: str) -> list[str]:
+    """Captions of real IG posts under this hashtag, for grounding the draft.
+
+    Best-effort by design: an X trend often has no Instagram presence, and the
+    weekly lookup budget can run out. Neither should stop a draft being
+    written — the prompt simply omits the reference block.
+    """
+
+    if not instagram.is_configured():
+        return []
+    try:
+        media = instagram.reference_media(
+            hashtag,
+            limit=settings.ig_reference_limit,
+            ttl_minutes=settings.ig_reference_cache_minutes,
+        )
+        captions = instagram.captions_for_prompt(media)
+        log.info("grounding draft in %d IG captions | %s", len(captions), hashtag)
+        return captions
+    except Exception as exc:  # noqa: BLE001
+        log.info("no IG reference for %s (%s) — drafting unguided", hashtag, exc)
+        return []
+
+
+@router.get("/hashtag-media")
+def hashtag_media(name: str, limit: int = 0):
+    """Real Instagram posts under a hashtag, shown to the reviewer as reference.
+
+    Counts against Instagram's 30-unique-hashtags-per-7-days budget, so this is
+    called only when a reviewer selects a trend — never across the feed.
+    """
+
+    if not instagram.is_configured():
+        raise HTTPException(
+            503,
+            "Instagram is not configured. Set FACEBOOK_USER_ACCESS_TOKEN and "
+            "INSTAGRAM_BUSINESS_ACCOUNT_ID in .env.",
+        )
+    try:
+        media = instagram.reference_media(
+            name,
+            limit=limit or settings.ig_reference_limit,
+            ttl_minutes=settings.ig_reference_cache_minutes,
+        )
+    except instagram.InstagramError as exc:
+        # Not an error worth a 500 — most X trends simply are not on Instagram.
+        raise HTTPException(404, str(exc))
+
+    return {**media, "budget_used": instagram.budget_used()}
+
+
+@router.post("/publish")
+def publish(req: PublishRequest):
+    """Publish an approved draft to Instagram and/or Facebook. This is live.
+
+    Each platform is attempted independently and reported separately: a
+    Facebook failure must not hide a successful Instagram post, and vice versa.
+    Instagram requires an image; Facebook falls back to a text post.
+    """
+
+    draft = _drafts.get(req.draft_id)
+    if draft is None:
+        raise HTTPException(404, "Unknown draft_id.")
+
+    caption = draft.post.post_text
+    tags = " ".join(draft.post.hashtags or [])
+    if tags and tags not in caption:
+        caption = f"{caption}\n\n{tags}"
+
+    results: list[dict] = []
+
+    # Make the image reachable by Meta once, and reuse it for both platforms.
+    # The generated image lives in the _images store, keyed by draft id — it is
+    # not a field on the Draft itself.
+    image = _images.get(req.draft_id)
+    public_url = None
+    upload_error = None
+    if image is not None:
+        try:
+            public_url = github_upload.ensure_public_url(image.url)
+        except Exception as exc:  # noqa: BLE001
+            upload_error = str(exc)
+            log.error("image upload failed | %s", exc)
+
+    # --- Instagram: needs an image, no exceptions ---
+    if req.to_instagram:
+        if not public_url:
+            results.append({
+                "platform": "instagram",
+                "ok": False,
+                "error": upload_error or (
+                    "Instagram requires an image. Generate one for this draft, "
+                    "then publish again."
+                ),
+            })
+        else:
+            try:
+                results.append(instagram.publish_image(public_url, caption))
+            except Exception as exc:  # noqa: BLE001
+                log.error("IG publish failed | %s", exc)
+                results.append({"platform": "instagram", "ok": False, "error": str(exc)})
+
+    # --- Facebook: publishes with or without an image ---
+    if req.to_facebook:
+        try:
+            results.append(facebook.publish(caption, image_url=public_url))
+        except Exception as exc:  # noqa: BLE001
+            log.error("FB publish failed | %s", exc)
+            results.append({"platform": "facebook", "ok": False, "error": str(exc)})
+
+    published = [r["platform"] for r in results if r.get("ok")]
+    log.info("PUBLISH | draft=%s | live on: %s", req.draft_id, published or "nothing")
+
+    return {
+        "draft_id": req.draft_id,
+        "results": results,
+        "any_published": bool(published),
+        "image_url": public_url,
+    }
 
 
 @router.post("/image", response_model=ImageResult)

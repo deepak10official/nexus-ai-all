@@ -16,6 +16,7 @@ from backend.mod03 import trends_html  # noqa: E402
 from backend.mod03.utils.config import settings  # noqa: E402
 from backend.core.logging import get_logger  # noqa: E402
 from backend.mod03.services.scoring import evaluate  # noqa: E402
+from backend.mod03.services import scrapebadger  # noqa: E402
 
 log = get_logger("trends")
 
@@ -44,7 +45,11 @@ def get_feed(force: bool = False) -> dict:
         return _build(region, _cache["trends"], _cache["fetched_at"], "cache",
                       f"Served from cache, under {settings.trend_cache_minutes} min old")
 
+    # Source order: trends24 (free scrape) -> ScrapeBadger (paid API) -> cache.
+    # The scraper stays first because it costs nothing; the API exists so a
+    # trends24 outage does not take the whole feed down with it.
     log.info("fetching live trends | region=%s | force=%s", region, force)
+    scrape_error: Exception | None = None
     try:
         started = _now()
         names = trends_html.fetch_trends(region)
@@ -55,16 +60,40 @@ def get_feed(force: bool = False) -> dict:
         return _build(region, names, _cache["fetched_at"], "live",
                       "Scraped live from trends24")
     except Exception as e:  # noqa: BLE001
+        scrape_error = e
         log.error("live fetch failed | %s: %s", type(e).__name__, e)
-        if _cache["trends"]:
-            log.warning("FALLBACK to cached trends | count=%d | cached_at=%s",
-                        len(_cache["trends"]), _cache["fetched_at"])
+
+    # --- fallback 1: ScrapeBadger API ---
+    if scrapebadger.is_configured():
+        try:
+            log.warning("FALLBACK to ScrapeBadger API | trends24 unavailable")
+            started = _now()
+            names = scrapebadger.fetch_trends(region)
+            took = (_now() - started).total_seconds()
+            _cache.update({"trends": names, "fetched_at": _now(), "region": region})
+            log.info("ScrapeBadger fetch ok | count=%d | %.2fs", len(names), took)
+            log.debug("trend names: %s", names)
             return _build(
-                region, _cache["trends"], _cache["fetched_at"], "cache",
-                f"Live scrape failed ({type(e).__name__}), serving last good result",
+                region, names, _cache["fetched_at"], "api",
+                "trends24 unavailable — served live from the ScrapeBadger API",
             )
-        log.critical("no cached trends available — request will fail")
-        raise
+        except Exception as e:  # noqa: BLE001
+            log.error("ScrapeBadger fallback failed | %s: %s", type(e).__name__, e)
+    else:
+        log.info("ScrapeBadger not configured — skipping API fallback")
+
+    # --- fallback 2: last good result ---
+    if _cache["trends"]:
+        log.warning("FALLBACK to cached trends | count=%d | cached_at=%s",
+                    len(_cache["trends"]), _cache["fetched_at"])
+        return _build(
+            region, _cache["trends"], _cache["fetched_at"], "cache",
+            f"Every live source failed ({type(scrape_error).__name__}), "
+            "serving last good result",
+        )
+
+    log.critical("no source available and no cached trends — request will fail")
+    raise scrape_error
 
 
 def _build(region: str, names: list[str], fetched_at: datetime,
@@ -92,7 +121,22 @@ def _build(region: str, names: list[str], fetched_at: datetime,
 
 
 def find(name: str) -> dict | None:
-    feed = get_feed()
+    """Look a trend up in the current feed.
+
+    Returns None when the trend is not present *or* when the feed cannot be
+    fetched at all. The caller (``/generate`` with force=True) already handles
+    a missing trend by scoring it on the fly, so a scraper outage must not
+    raise here — otherwise the manual hashtag bench, the one escape hatch that
+    does not need the scraper, dies with it.
+    """
+
+    try:
+        feed = get_feed()
+    except Exception as exc:
+        log.warning("find(%s): feed unavailable (%s) — treating as not found",
+                    name, type(exc).__name__)
+        return None
+
     for t in feed["trends"]:
         if t["name"].lower() == name.lower():
             return t

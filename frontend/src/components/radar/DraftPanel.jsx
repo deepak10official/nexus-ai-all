@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
+  Check,
   Clock,
   Download,
   Image as ImageIcon,
@@ -126,6 +127,7 @@ export default function DraftPanel({
   error,
   onGenerate,
   health,
+  onHandoff,
 }) {
   const [image, setImage] = useState(null);
   const [imageBusy, setImageBusy] = useState(false);
@@ -134,6 +136,7 @@ export default function DraftPanel({
 
   const [postStatus, setPostStatus] = useState("pending");
   const [imageStatus, setImageStatus] = useState("pending");
+  const [sentToPanel, setSentToPanel] = useState(false);
   const [finalDecision, setFinalDecision] = useState(null);
 
   const [editingPost, setEditingPost] = useState(false);
@@ -151,6 +154,7 @@ export default function DraftPanel({
     setActionError(null);
     setPostStatus("pending");
     setImageStatus("pending");
+    setSentToPanel(false);
     setFinalDecision(null);
     setEditingPost(false);
     setEditingImage(false);
@@ -199,6 +203,8 @@ export default function DraftPanel({
       setDraft(updated);
       setEditingPost(false);
       setPostStatus("pending");
+      // The wording changed, so anything already sent to the panel is stale.
+      setSentToPanel(false);
     } catch (e) {
       setActionError(e.message);
     } finally {
@@ -226,9 +232,28 @@ export default function DraftPanel({
     setActionError(null);
     try {
       const res = await api.decide(draft.draft_id, action, target);
-      if (target === "post") setPostStatus(action === "approve" ? "approved" : "rejected");
+      if (target === "post") {
+        setPostStatus(action === "approve" ? "approved" : "rejected");
+        if (action === "reject") setSentToPanel(false);
+      }
       if (target === "image") setImageStatus(action === "approve" ? "approved" : "rejected");
       if (target === "final") setFinalDecision(res);
+
+      // Approved copy is what the Persona Panel validates, so send the wording
+      // (and approved image if available) over to MOD02 as soon as approved.
+      // Approving the copy loads the draft without stealing focus; the final
+      // approval ends the MOD03 flow, so that one switches the view.
+      if (action === "approve" && (target === "post" || target === "final" || target === "image") && onHandoff) {
+        const isImgApproved = target === "image" ? action === "approve" : imageStatus === "approved";
+        onHandoff({
+          draft_id: draft.draft_id,
+          post: draft.post.post_text,
+          hashtags: draft.post.hashtags ?? [],
+          image_url: isImgApproved && image?.url ? image.url : null,
+          switchTo: target === "final",
+        });
+        setSentToPanel(true);
+      }
     } catch (e) {
       setActionError(e.message);
     } finally {
@@ -322,6 +347,32 @@ export default function DraftPanel({
               setEditingImage(false);
             }}
           />
+
+          {/* Confirms the wording reached MOD02, so the handoff is not silent. */}
+          <AnimatePresence>
+            {sentToPanel && (
+              <motion.button
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                onClick={() => onHandoff?.({
+                  draft_id: draft.draft_id,
+                  post: draft.post.post_text,
+                  hashtags: draft.post.hashtags ?? [],
+                  switchTo: true,
+                })}
+                className="group flex w-full items-center justify-between gap-2 rounded-xl border border-signal/30 bg-signal/[0.07] px-3 py-2.5 text-left transition hover:border-signal/50 hover:bg-signal/[0.12]"
+              >
+                <span className="flex items-center gap-2 text-xs text-signal">
+                  <Check size={13} />
+                  Sent to the Persona Panel for validation
+                </span>
+                <span className="font-mono text-[10px] uppercase tracking-wider text-muted transition group-hover:text-chalk">
+                  Run panel →
+                </span>
+              </motion.button>
+            )}
+          </AnimatePresence>
 
           <AnimatePresence>
             {editingPost && (
@@ -460,6 +511,11 @@ export default function DraftPanel({
                 </p>
                 <p className="mt-1 text-[11px] leading-relaxed text-muted">
                   {finalDecision.message}
+                </p>
+
+                <p className="mt-2 text-[11px] leading-relaxed text-muted">
+                  Sent to the Persona Panel. Publishing happens there, once the
+                  personas have approved it.
                 </p>
               </motion.div>
             ) : (
